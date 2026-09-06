@@ -19,6 +19,7 @@ spawn — verified against real biome data, not just structure-placement math.
 - [Development Workflow](#development-workflow)
 - [Module Ownership](#module-ownership)
 - [Known Limitations](#known-limitations)
+- [Credits & Licensing](#credits--licensing)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -146,10 +147,11 @@ mc-seed-finder/
 ├── build.rs                    # Compiles oracle/cubiomes/ + shim.c via the `cc` crate
 ├── oracle/
 │   └── cubiomes/                # Vendored C source (github.com/Cubitect/cubiomes)
-│       ├── *.c / *.h            # cubiomes itself, unmodified
-│       ├── tables/               # cubiomes' biome-tree data tables
-│       └── shim.c                # Our thin C wrapper — hides Generator's
-│                                  # struct layout behind an opaque handle
+│       ├── LICENSE               # cubiomes' MIT license — required to ship alongside the vendored source, see Credits & Licensing
+│       ├── *.c / *.h             # cubiomes itself, unmodified
+│       ├── tables/                # cubiomes' biome-tree data tables
+│       └── shim.c                 # Our thin C wrapper — hides Generator's
+│                                   # struct layout behind an opaque handle
 ├── src/
 │   ├── main.rs                  # Thin entry point — calls into the library below
 │   ├── lib.rs                    # Exposes all modules; ties search + biome together
@@ -310,6 +312,37 @@ be built independently and in parallel with everything else.
   officially know about Chaos Cubed. Watch for this if Mojang ever changes
   Overworld surface climate/biome placement in a future update; nothing here
   would catch that automatically.
+
+---
+
+## Credits & Licensing
+
+This project's biome verification is only possible because of
+[**cubiomes**](https://github.com/Cubitect/cubiomes) by
+[Cubitect](https://github.com/Cubitect) — a from-scratch C reimplementation
+of Minecraft's world generation, and the seed-finding community's reference
+implementation for this kind of work. `oracle/cubiomes/` is a vendored,
+unmodified copy of its source (plus our own `shim.c`, which is not part of
+cubiomes), compiled directly into this binary by `build.rs`. Two specific
+things in this project came directly from reading cubiomes' source rather
+than from Mojang's game files or our own derivation:
+
+- The corrected swamp-hut salt (`14357620`), found in `finders.c`'s
+  `s_swamp_hut` config — see [How Biome Checking Works](#how-biome-checking-works).
+- The `isViableStructurePos` call our `shim.c` wraps, which encodes the
+  correct per-version y-sampling logic for structure biome checks — this
+  project does not reimplement that logic itself.
+
+cubiomes is MIT-licensed (see `oracle/cubiomes/LICENSE`, included verbatim
+alongside the vendored source as the license requires). This project's own
+code is Rust, in `src/`, and is not itself part of cubiomes — only the
+`oracle/cubiomes/` directory is someone else's code.
+
+If this project ever switches to the [`cubiomes` crate on
+crates.io](https://crates.io/crates/cubiomes) (see [How Biome Checking
+Works](#how-biome-checking-works)), credit for the underlying generation
+logic still traces back to the same place: villevilli's crate is itself a
+binding over Cubitect's cubiomes.
 
 ---
 
