@@ -1,8 +1,10 @@
 # mc-seed-finder
 
 A Rust command-line tool that searches through candidate Minecraft world seeds
-and finds ones matching conditions you specify (e.g. a village within a
-certain distance of spawn), inspired by [Chunkbase's Seed Finder](https://www.chunkbase.com/apps/seed-finder).
+and finds ones matching conditions you specify, inspired by [Chunkbase's Seed
+Finder](https://www.chunkbase.com/apps/seed-finder). Currently implements
+swamp-hut AFK farm conditions — double and quad hut clusters near
+spawn — verified against real biome data, not just structure-placement math.
 
 ---
 
@@ -10,9 +12,13 @@ certain distance of spawn), inspired by [Chunkbase's Seed Finder](https://www.ch
 
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
+- [Usage](#usage)
 - [Project Structure](#project-structure)
+- [How Biome Checking Works](#how-biome-checking-works)
+- [Known Seeds / Verification](#known-seeds--verification)
 - [Development Workflow](#development-workflow)
 - [Module Ownership](#module-ownership)
+- [Known Limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -23,25 +29,36 @@ Before you touch any code, make sure you have these installed:
 
 1. **Git** — [git-scm.com](https://git-scm.com/downloads). Default install options are fine.
 2. **Rust (via rustup)** — [rustup.rs](https://rustup.rs/)
-   - **Windows only:** you also need the MSVC C++ Build Tools. Install from
+3. **A C compiler.** This is not optional, and it's not just a Windows thing
+   anymore: `build.rs` compiles a vendored copy of the
+   [cubiomes](https://github.com/Cubitect/cubiomes) C library from source on
+   every clean build, via the [`cc`](https://crates.io/crates/cc) crate.
+   - **Linux:** `sudo apt install build-essential` (or your distro's
+     equivalent) gets you `gcc`.
+   - **macOS:** `xcode-select --install` gets you `clang`.
+   - **Windows:** install the MSVC C++ Build Tools from
      [visualstudio.microsoft.com/visual-cpp-build-tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
      and check **"Desktop development with C++"** in the installer. Do this
      *before* running the Rust installer, or you'll get linker errors later.
-3. **A code editor** — VS Code recommended, with the **rust-analyzer** extension installed.
+     The `cc` crate finds `cl.exe` the same way `rustc` does, so once this is
+     installed correctly you don't need to configure anything else.
+4. **A code editor** — VS Code recommended, with the **rust-analyzer** extension installed.
+
+You do **not** need to separately install cubiomes, clang/libclang, or
+bindgen — the C library's source is vendored under `oracle/cubiomes/` and
+compiled straight into the binary.
 
 ### Verify everything is installed
-
-Open a terminal (Command Prompt, PowerShell, or Git Bash all work) and run:
 
 ```
 git --version
 rustc --version
 cargo --version
+cc --version        # or `cl` on Windows, from a "Developer Command Prompt"
 ```
 
-All three should print a version number. If any say "not recognized," restart
-your terminal (or your machine) — installers often need a fresh session to
-update your PATH.
+If any say "not recognized," restart your terminal (or your machine) —
+installers often need a fresh session to update your PATH.
 
 ---
 
@@ -54,35 +71,69 @@ git clone https://github.com/Furina-star/mc-seed-finder.git
 cd mc-seed-finder
 ```
 
-### 2. Build and run
+### 2. Build
 
 ```
-cargo run
+cargo build --release
 ```
 
-This compiles everything under `src/` and runs the resulting program in one
-step. The first build will take longer since it also downloads and compiles
-dependencies — subsequent builds are much faster.
+The first build is noticeably slower than a normal Rust project's — it's
+also compiling the vendored cubiomes C source (`oracle/cubiomes/`), not just
+downloading and compiling Rust dependencies.
 
-### 3. Run the tests
+### 3. Run
 
 ```
-cargo test
+cargo run --release -- search 50000000 --mode double
 ```
 
-This runs both the unit tests inside each module (things like the RNG
-correctness check) and the integration tests under `tests/`.
+See [Usage](#usage) below for the full command shape.
 
-### 4. Format your code before committing
+### 4. Run the tests
+
+```
+cargo test --release
+```
+
+This runs the RNG reference-value unit test (`src/rng/mod.rs`) and the
+known-seed integration tests under `tests/known-seeds/` — real seeds this
+project found and independently confirmed against cubiomes' biome logic.
+**Run this after pulling any change touching `rng/`, `structures/`,
+`placement/`, or `conditions/`** — those known-seed tests are the fastest
+way to catch a broken salt/spacing/RNG constant before it silently produces
+wrong output.
+
+### 5. Format your code before committing
 
 ```
 cargo fmt
 ```
 
-Run this before every commit — it auto-formats all `.rs` files to a
-consistent style, so four people's code doesn't clash in diffs. (Optional:
-in VS Code, enable "Format On Save" in settings so this happens automatically
-every time you hit Ctrl+S.)
+(Optional: in VS Code, enable "Format On Save.")
+
+---
+
+## Usage
+
+```
+mc-seed-finder bench [count] --mode <double|quad>
+mc-seed-finder search [count] --mode <double|quad>
+```
+
+- `bench` — Pass-1 geometry scan only, no biome check. Use this to measure
+  raw throughput on your hardware before committing to a long `search` run.
+- `search` — Pass-1 geometry scan, then a real biome check (via cubiomes) on
+  the survivors. Prints confirmed matches with block coordinates.
+- `count` — number of seeds to scan, starting from 0. Defaults to
+  10,000,000. Fits comfortably up to `1_000_000_000`+ (this is an `i64`).
+- `--mode` — which hut-cluster condition to search for (defaults to
+  `double`). See [Module Ownership](#module-ownership) for what each one
+  actually checks geometrically.
+
+Example:
+```
+cargo run --release -- search 300000000 --mode quad
+```
 
 ---
 
@@ -92,27 +143,86 @@ every time you hit Ctrl+S.)
 mc-seed-finder/
 ├── Cargo.toml
 ├── .gitignore
-├── .gitattributes
+├── build.rs                    # Compiles oracle/cubiomes/ + shim.c via the `cc` crate
+├── oracle/
+│   └── cubiomes/                # Vendored C source (github.com/Cubitect/cubiomes)
+│       ├── *.c / *.h            # cubiomes itself, unmodified
+│       ├── tables/               # cubiomes' biome-tree data tables
+│       └── shim.c                # Our thin C wrapper — hides Generator's
+│                                  # struct layout behind an opaque handle
 ├── src/
-│   ├── main.rs           # Thin entry point — calls into the library below
-│   ├── lib.rs             # Exposes all modules so tests/ can use them
-│   ├── cli.rs             # Command-line argument parsing (clap)
+│   ├── main.rs                  # Thin entry point — calls into the library below
+│   ├── lib.rs                    # Exposes all modules; ties search + biome together
+│   ├── cli.rs                    # Command-line argument parsing (clap)
 │   ├── rng/
-│   │   └── mod.rs         # Java-compatible RNG — the foundation everything else uses
+│   │   └── mod.rs                 # Java-compatible RNG — the foundation everything else uses
 │   ├── structures/
-│   │   └── mod.rs         # Per-structure data: spacing, separation, salt
+│   │   └── mod.rs                 # Per-structure data: spacing, separation, salt
 │   ├── placement/
-│   │   └── mod.rs         # Region-grid math: computes candidate chunks
+│   │   └── mod.rs                 # Region-grid math: computes candidate chunks
 │   ├── biome/
-│   │   └── mod.rs         # Wraps the `cubiomes` crate for biome checks
+│   │   └── mod.rs                 # Direct FFI into oracle/cubiomes/ (see below —
+│   │                               # NOT the crates.io `cubiomes` crate)
 │   ├── conditions/
-│   │   └── mod.rs         # Defines what counts as a "matching" seed
+│   │   └── mod.rs                 # DoubleHutCondition / QuadHutCondition
 │   └── search/
-│       └── mod.rs         # Parallel loop over candidate seeds
+│       └── mod.rs                 # Parallel (rayon) loop over candidate seeds
 └── tests/
     └── known-seeds/
-        └── main.rs        # Verifies output against seeds with known structure locations
+        └── main.rs                # Verifies output against seeds with known, confirmed hits
 ```
+
+---
+
+## How Biome Checking Works
+
+`biome/mod.rs` binds directly to the vendored cubiomes C source via a small
+hand-written shim (`oracle/cubiomes/shim.c`), compiled and linked into this
+binary by `build.rs`. There is a real, published safe Rust wrapper for
+cubiomes on crates.io — [`cubiomes`](https://crates.io/crates/cubiomes),
+by villevilli, built on `cubiomes-sys` via `bindgen` — and it's the more
+idiomatic long-term choice if this project ever wants to drop the hand-rolled
+shim. It isn't used currently because:
+
+1. It needs `bindgen` + a working `libclang` on every contributor's machine
+   at build time — one more cross-platform variable on top of the C-compiler
+   requirement this project already has.
+2. Its exact API surface hasn't been verified end-to-end the way this shim
+   has (see `tests/known-seeds`).
+
+Swapping to it later should only require changes inside `biome/mod.rs`.
+
+**Version caveat:** the vendored cubiomes source predates Minecraft 26.2
+("Chaos Cubed") — its newest supported version is 1.21 "Winter Drop". Chaos
+Cubed's known changes (Sulfur Caves biome, sub-Y0 ore/cave adjustments) are
+cave-focused, so surface swamp placement is *probably* unaffected — but
+that's an assumption, not a verified fact. If you're chasing a specific
+seed, spot-check one confirmed coordinate against chunkbase's live 26.2 map
+or in-game F3 before trusting a full batch.
+
+**Structure salt:** swamp hut uses salt `14357620`, not the commonly
+copy-pasted `14357617`. The latter is the pre-1.13 salt shared by desert
+pyramids, jungle temples, witch huts, and igloos together; Mojang split
+these into per-structure salts in 1.13, and swamp hut's became `14357620`.
+Verified against cubiomes' `finders.c` (`s_swamp_hut` config). See
+`structures/mod.rs` for the full note.
+
+---
+
+## Known Seeds / Verification
+
+`tests/known-seeds/main.rs` pins seeds this project found *and independently
+confirmed* against cubiomes' real biome logic (not just geometry):
+
+| Seed | Mode | Test |
+|---|---|---|
+| `2120` | double | `seed_2120_is_a_geometric_double_hut_match` |
+
+If you find and confirm a new seed worth pinning (especially for `quad`,
+which doesn't have one yet — it's rare enough that a full search wasn't run
+to completion during development), add it here following the same pattern:
+assert the exact hut coordinates the condition returns, with a comment
+explaining how it was found/confirmed.
 
 ---
 
@@ -145,9 +255,6 @@ than one giant one at the end.
 git push -u origin yourname/task-name
 ```
 
-(The `-u` is only needed the first time you push a given branch — after that,
-plain `git push` works.)
-
 Then open a Pull Request on GitHub comparing your branch into `main`. Have a
 teammate review it before merging.
 
@@ -159,24 +266,14 @@ git pull
 git branch -d yourname/task-name
 ```
 
-Delete the branch on GitHub too (there's a button right on the merged PR
-page), or enable **Settings → General → "Automatically delete head
-branches"** so it happens for you.
+Delete the branch on GitHub too, or enable **Settings → General →
+"Automatically delete head branches."**
 
 ### If you hit a merge conflict
 
-`git status` will list the conflicted files. Open them and look for:
-
-```
-<<<<<<< HEAD
-your version
-=======
-their version
->>>>>>> branch-name
-```
-
-Edit the file to keep whichever version (or combination) is correct, delete
-the marker lines, then `git add <file>` and `git commit` to finish.
+`git status` will list the conflicted files. Open them, resolve the
+`<<<<<<< HEAD` / `=======` / `>>>>>>>` markers, then `git add <file>` and
+`git commit` to finish.
 
 ---
 
@@ -185,15 +282,34 @@ the marker lines, then `git add <file>` and `git commit` to finish.
 | Module | Focus | Depends on |
 |---|---|---|
 | `rng/` | Core RNG — must exactly match Java's `Random` behavior | none |
-| `placement/` | Region-grid math for locating candidate chunks | `rng/` |
-| `biome/` | Wraps the `cubiomes` crate for biome/condition checks | external crate |
-| `conditions/` | Defines and evaluates "does this seed match?" | `placement/`, `biome/` |
-| `search/` | Parallel loop over candidate seeds, collects matches | `conditions/` |
-| `cli.rs` | Argument parsing — seed count, conditions, thread count | none |
 | `structures/` | Static data: spacing/separation/salt per structure type | none |
+| `placement/` | Region-grid math for locating candidate chunks | `rng/`, `structures/` |
+| `conditions/` | Geometry-only match logic — `DoubleHutCondition` (adjacent pair), `QuadHutCondition` (all 4 corners of a 2x2 block) | `placement/`, `structures/` |
+| `biome/` | Direct FFI into vendored cubiomes (`oracle/cubiomes/`), NOT the crates.io `cubiomes` crate — see [How Biome Checking Works](#how-biome-checking-works) | `oracle/cubiomes/` (vendored C), `build.rs` |
+| `search/` | Parallel (rayon) loop over candidate seeds, generic over match type | `conditions/` |
+| `lib.rs` | Ties `search` + `biome` together per condition (`find_confirmed_double/quad`) | `search/`, `biome/`, `conditions/` |
+| `cli.rs` | Argument parsing — seed count, `--mode` | none |
 
 `cli.rs` and `structures/` have no dependencies on other modules, so they can
 be built independently and in parallel with everything else.
+
+---
+
+## Known Limitations
+
+- **No thread-count flag yet.** Rayon auto-detects and uses all available
+  cores; there's no way to cap it from the CLI. Would be a small addition to
+  `cli.rs` (a `--threads` flag calling
+  `rayon::ThreadPoolBuilder::num_threads`) if you need to leave headroom on a
+  shared machine.
+- **Quad-hut has no pinned known-seed test.** It's rare enough (both huts of
+  a 2x2 block are far less likely to all be swamp than a pair) that
+  a search wasn't run to completion during development. If you run one to
+  completion, add the result to `tests/known-seeds/`.
+- **The 26.2 version gap** described above — cubiomes here doesn't
+  officially know about Chaos Cubed. Watch for this if Mojang ever changes
+  Overworld surface climate/biome placement in a future update; nothing here
+  would catch that automatically.
 
 ---
 
@@ -202,6 +318,25 @@ be built independently and in parallel with everything else.
 **"cargo: command not found" / "not recognized"**
 Rust's installer didn't finish updating your PATH — close and reopen your
 terminal, or restart your machine.
+
+**Build fails looking for a C compiler ("cc"/"cl" not found)**
+See [Prerequisites](#prerequisites) — a C compiler is required for every
+build, not just the first one, since `build.rs` compiles `oracle/cubiomes/`
+each time its source changes. On Windows this almost always means the MSVC
+Build Tools aren't installed or aren't on PATH — try building from a
+"Developer Command Prompt for VS" once to confirm the toolchain itself
+works, before troubleshooting Cargo.
+
+**Build fails with `tables/btree18.h: No such file or directory` or similar**
+`oracle/cubiomes/tables/` is missing or incomplete — make sure your checkout
+actually includes it (it's not something `.gitignore` should ever exclude;
+double check if you don't see it after cloning).
+
+**`cargo test` fails on a `known-seeds` test**
+Don't just re-run it — this means the RNG, salt, spacing, or condition logic
+changed in a way that broke a previously-confirmed real seed. Check what
+changed in `rng/`, `structures/`, `placement/`, or `conditions/` since the
+last passing run before assuming the test itself is wrong.
 
 **Linker errors when building on Windows**
 You're missing the MSVC C++ Build Tools — see [Prerequisites](#prerequisites).
