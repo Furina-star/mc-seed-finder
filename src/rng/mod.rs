@@ -1,0 +1,2 @@
+/* Random number generation utilities.
+Uses Java Random and provides a Rust wrapper for it. */
