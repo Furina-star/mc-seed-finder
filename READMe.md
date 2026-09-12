@@ -378,6 +378,29 @@ You're missing the MSVC C++ Build Tools — see [Prerequisites](#prerequisites).
 Your local branch isn't actually named `main` (it may still be `master`).
 Run `git branch` to check, then `git branch -M main` to rename it.
 
+**`git pull` refuses, saying local changes to `Cargo.lock` would be
+overwritten — but `git status` says the working tree is clean**
+This is a phantom diff, most likely left over from `.gitattributes` being
+added after `Cargo.lock` was already tracked — `status` and the merge
+machinery can disagree about whether the file counts as "changed." Fix it
+for good, once: `git add --renormalize .` then commit. Until that cleanup
+lands, if you hit this: `git fetch origin` then `git reset --hard
+origin/main` forces a clean sync (only ever do this on `main` — never on a
+branch with real uncommitted work, since `--hard` discards it permanently).
+
+**`git pull` refuses the same way, and `git status` *does* show `Cargo.lock`
+as modified**
+This is the ordinary version — running `cargo build`/`test`/`check` before
+pulling silently updates `Cargo.lock` locally. Fix: `git restore Cargo.lock`,
+then `git pull` again. Pull before you build, not after, to avoid this
+recurring.
+
+**`Cargo.lock` has actual `<<<<<<<` conflict markers after a merge**
+Don't hand-resolve them — it's machine-generated and not meant to be edited
+by hand. Resolve `Cargo.toml` normally instead (that one's human-readable),
+delete `Cargo.lock` entirely, run `cargo build` to regenerate a correct one
+from the resolved `Cargo.toml`, then commit the result.
+
 **A file won't "Run" in your editor**
 Config files like `Cargo.toml` aren't code — there's nothing to execute. Use
 `cargo run` from the terminal, or open `src/main.rs` and use the ▶ Run link
