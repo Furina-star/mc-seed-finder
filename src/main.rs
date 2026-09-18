@@ -1,5 +1,7 @@
 /* Main entry point for the seed finder application. */
 
+mod cli;
+
 fn main() {
-    println!("Hello, world!");
+    println!("Hello, Nigga world!");
 }

@@ -1,2 +1,10 @@
-* text=auto 
-*.rs text eol=lf
+# Vendored third-party C library (Cubitect/cubiomes, MIT-licensed — see
+# oracle/cubiomes/LICENSE). This isn't project code, so it shouldn't count
+# toward GitHub's "Languages" bar making this look like a C repo when it's
+# actually a Rust project with a small amount of vendored C underneath it.
+oracle/cubiomes/** linguist-vendored
+
+# shim.c is OUR code (not part of upstream cubiomes) — carve it back out of
+# the vendored exclusion above so it still counts toward the repo's real
+# language stats. Remove this line if you'd rather it stay excluded too.
+oracle/cubiomes/shim.c linguist-vendored=false
