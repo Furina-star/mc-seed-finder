@@ -7,4 +7,4 @@ oracle/cubiomes/** linguist-vendored
 # shim.c is OUR code (not part of upstream cubiomes) — carve it back out of
 # the vendored exclusion above so it still counts toward the repo's real
 # language stats. Remove this line if you'd rather it stay excluded too.
-oracle/cubiomes/shim.c linguist-vendored=false
+oracle/cubiomes/shim.c -linguist-vendored
