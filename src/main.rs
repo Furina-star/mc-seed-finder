@@ -3,5 +3,5 @@
 mod cli;
 
 fn main() {
-    println!("Hello, Nigga world!");
+    println!("Success!!!");
 }
