@@ -85,7 +85,7 @@ downloading and compiling Rust dependencies.
 ### 3. Run
 
 ```
-cargo run --release -- search 50000000 --mode double
+cargo run --release -- search 50000000 --start-seed 0 --mode double
 ```
 
 See [Usage](#usage) below for the full command shape.
@@ -96,13 +96,10 @@ See [Usage](#usage) below for the full command shape.
 cargo test --release
 ```
 
-This runs the RNG reference-value unit test (`src/rng/mod.rs`) and the
-known-seed integration tests under `tests/known-seeds/` — real seeds this
-project found and independently confirmed against cubiomes' biome logic.
-**Run this after pulling any change touching `rng/`, `structures/`,
-`placement/`, or `conditions/`** — those known-seed tests are the fastest
-way to catch a broken salt/spacing/RNG constant before it silently produces
-wrong output.
+This runs the unit and integration tests included in the project. Run it
+after pulling any change touching `rng/`, `structures/`, `placement/`, or
+`conditions/` — these tests are the fastest way to catch a broken
+salt/spacing/RNG constant before it silently produces wrong output.
 
 ### 5. Format your code before committing
 
@@ -117,24 +114,45 @@ cargo fmt
 ## Usage
 
 ```
-mc-seed-finder bench [count] --mode <double|quad>
-mc-seed-finder search [count] --mode <double|quad>
+mc-seed-finder bench [count] [--start-seed <seed>] --mode <double|quad>
+mc-seed-finder search [count] [--start-seed <seed>] --mode <double|quad>
 ```
 
 - `bench` — Pass-1 geometry scan only, no biome check. Use this to measure
   raw throughput on your hardware before committing to a long `search` run.
 - `search` — Pass-1 geometry scan, then a real biome check (via cubiomes) on
-  the survivors. Prints confirmed matches with block coordinates.
-- `count` — number of seeds to scan, starting from 0. Defaults to
-  10,000,000. Fits comfortably up to `1_000_000_000`+ (this is an `i64`).
+  the survivors. Prints Pass-1 timing, biome-validation timing, total
+  end-to-end timing, and confirmed matches with block coordinates.
+- `count` — number of seeds to scan. Defaults to `10,000,000`. The scanned
+  interval is `start_seed..start_seed + count`.
+- `--start-seed` — first seed in the interval. Defaults to `0`. Use this to
+  reproduce the exact same seed range in another implementation.
 - `--mode` — which hut-cluster condition to search for (defaults to
   `double`). See [Module Ownership](#module-ownership) for what each one
   actually checks geometrically.
 
 Example:
 ```
-cargo run --release -- search 300000000 --mode quad
+cargo run --release -- bench 10000000 --start-seed 0 --mode quad
+
+# End-to-end search over the same interval
+cargo run --release -- search 10000000 --start-seed 0 --mode quad
+
+# Search a later interval
+cargo run --release -- search 10000000 --start-seed 10000000 --mode quad
 ```
+
+`bench` reports Pass-1 geometry throughput only. `search` reports the
+end-to-end rate:
+
+```text
+total seeds / (geometry time + biome-validation time)
+```
+
+This end-to-end rate is the appropriate Rust figure to compare with a tool
+that performs its complete search pipeline per seed. The current build uses
+Rayon's automatically selected thread pool; an explicit `--threads` option
+is not available yet.
 
 ---
 
@@ -170,7 +188,7 @@ mc-seed-finder/
 │   └── search/
 │       └── mod.rs                 # Parallel (rayon) loop over candidate seeds
 └── tests/
-    └── known-seeds/
+    └── known_seeds/
         └── main.rs                # Verifies output against seeds with known, confirmed hits
 ```
 
@@ -213,18 +231,17 @@ Verified against cubiomes' `finders.c` (`s_swamp_hut` config). See
 
 ## Known Seeds / Verification
 
-`tests/known-seeds/main.rs` pins seeds this project found *and independently
-confirmed* against cubiomes' real biome logic (not just geometry):
+The condition and RNG tests pin behavior that should remain stable when
+placement logic changes. Confirmed search results should also be checked
+against cubiomes' real biome logic (not just geometry):
 
 | Seed | Mode | Test |
 |---|---|---|
 | `2120` | double | `seed_2120_is_a_geometric_double_hut_match` |
 
-If you find and confirm a new seed worth pinning (especially for `quad`,
-which doesn't have one yet — it's rare enough that a full search wasn't run
-to completion during development), add it here following the same pattern:
-assert the exact hut coordinates the condition returns, with a comment
-explaining how it was found/confirmed.
+If you find and confirm a new seed worth pinning, add an integration test
+that asserts the exact hut coordinates the condition returns, with a comment
+explaining how it was found and independently confirmed.
 
 ---
 
@@ -290,7 +307,7 @@ Delete the branch on GitHub too, or enable **Settings → General →
 | `biome/` | Direct FFI into vendored cubiomes (`oracle/cubiomes/`), NOT the crates.io `cubiomes` crate — see [How Biome Checking Works](#how-biome-checking-works) | `oracle/cubiomes/` (vendored C), `build.rs` |
 | `search/` | Parallel (rayon) loop over candidate seeds, generic over match type | `conditions/` |
 | `lib.rs` | Ties `search` + `biome` together per condition (`find_confirmed_double/quad`) | `search/`, `biome/`, `conditions/` |
-| `cli.rs` | Argument parsing — seed count, `--mode` | none |
+| `cli.rs` | Argument parsing — seed count, `--start-seed`, and `--mode` | none |
 
 `cli.rs` and `structures/` have no dependencies on other modules, so they can
 be built independently and in parallel with everything else.
@@ -299,11 +316,11 @@ be built independently and in parallel with everything else.
 
 ## Known Limitations
 
-- **No thread-count flag yet.** Rayon auto-detects and uses all available
-  cores; there's no way to cap it from the CLI. Would be a small addition to
-  `cli.rs` (a `--threads` flag calling
-  `rayon::ThreadPoolBuilder::num_threads`) if you need to leave headroom on a
-  shared machine.
+- **No thread-count flag yet.** Rayon automatically selects the available
+  thread pool. The benchmark output identifies the Pass-1 and end-to-end
+  rates, but the current CLI cannot cap or select the number of worker
+  threads. This will be added separately so benchmark changes remain
+  reproducible.
 - **Quad-hut has no pinned known-seed test.** It's rare enough (both huts of
   a 2x2 block are far less likely to all be swamp than a pair) that
   a search wasn't run to completion during development. If you run one to
