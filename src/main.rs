@@ -45,10 +45,12 @@ fn main() {
         Command::Search { count, mode } => {
             validate_count(count);
             println!("Pass 1: scanning {count} seeds for geometry-only {mode:?} hut clusters...");
+            let total_start = std::time::Instant::now();
             match mode {
                 Mode::Double => {
                     let (pass1, confirmed) = find_confirmed_double(count);
                     print_pass1_summary(pass1.matches.len(), pass1.seeds_scanned, pass1.elapsed);
+                    print_total_summary(total_start.elapsed(), pass1.elapsed, count);
                     println!(
                         "\n=== CONFIRMED (geometry + real biome check) ===\n{} of {} candidates are actual swamp at every hut.",
                         confirmed.len(),
@@ -64,6 +66,7 @@ fn main() {
                 Mode::Quad => {
                     let (pass1, confirmed) = find_confirmed_quad(count);
                     print_pass1_summary(pass1.matches.len(), pass1.seeds_scanned, pass1.elapsed);
+                    print_total_summary(total_start.elapsed(), pass1.elapsed, count);
                     println!(
                         "\n=== CONFIRMED (geometry + real biome check) ===\n{} of {} candidates are actual swamp at every hut.",
                         confirmed.len(),
@@ -88,6 +91,16 @@ fn print_pass1_summary(match_count: usize, seeds_scanned: i64, elapsed: std::tim
         elapsed,
         match_count,
         seeds_scanned as f64 / elapsed.as_secs_f64()
+    );
+}
+
+fn print_total_summary(total: std::time::Duration, pass1: std::time::Duration, seeds_scanned: i64) {
+    let pass2 = total.saturating_sub(pass1);
+    println!("Pass 2 biome validation: {:.2?}", pass2);
+    println!(
+        "Total end-to-end: {:.2?} ({:.0} seeds/sec)",
+        total,
+        seeds_scanned as f64 / total.as_secs_f64()
     );
 }
 
