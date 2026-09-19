@@ -114,8 +114,8 @@ cargo fmt
 ## Usage
 
 ```
-mc-seed-finder bench [count] [--start-seed <seed>] --mode <double|quad>
-mc-seed-finder search [count] [--start-seed <seed>] --mode <double|quad>
+mc-seed-finder bench [count] [--start-seed <seed>] [--threads <n>] --mode <double|quad>
+mc-seed-finder search [count] [--start-seed <seed>] [--threads <n>] --mode <double|quad>
 ```
 
 - `bench` — Pass-1 geometry scan only, no biome check. Use this to measure
@@ -127,19 +127,22 @@ mc-seed-finder search [count] [--start-seed <seed>] --mode <double|quad>
   interval is `start_seed..start_seed + count`.
 - `--start-seed` — first seed in the interval. Defaults to `0`. Use this to
   reproduce the exact same seed range in another implementation.
+- `--threads` — number of Rayon worker threads. Defaults to the detected
+  logical CPU count. Use `--threads 1` for a single-thread baseline or
+  `--threads 16` to reproduce the Ryzen 7 5700X all-thread benchmark.
 - `--mode` — which hut-cluster condition to search for (defaults to
   `double`). See [Module Ownership](#module-ownership) for what each one
   actually checks geometrically.
 
 Example:
 ```
-cargo run --release -- bench 10000000 --start-seed 0 --mode quad
+cargo run --release -- bench 10000000 --start-seed 0 --threads 16 --mode quad
 
 # End-to-end search over the same interval
-cargo run --release -- search 10000000 --start-seed 0 --mode quad
+cargo run --release -- search 10000000 --start-seed 0 --threads 16 --mode quad
 
 # Search a later interval
-cargo run --release -- search 10000000 --start-seed 10000000 --mode quad
+cargo run --release -- search 10000000 --start-seed 10000000 --threads 16 --mode quad
 ```
 
 `bench` reports Pass-1 geometry throughput only. `search` reports the
@@ -150,9 +153,8 @@ total seeds / (geometry time + biome-validation time)
 ```
 
 This end-to-end rate is the appropriate Rust figure to compare with a tool
-that performs its complete search pipeline per seed. The current build uses
-Rayon's automatically selected thread pool; an explicit `--threads` option
-is not available yet.
+that performs its complete search pipeline per seed. Use `--threads` to make
+single-thread and all-thread comparisons explicit and reproducible.
 
 ---
 
@@ -307,7 +309,7 @@ Delete the branch on GitHub too, or enable **Settings → General →
 | `biome/` | Direct FFI into vendored cubiomes (`oracle/cubiomes/`), NOT the crates.io `cubiomes` crate — see [How Biome Checking Works](#how-biome-checking-works) | `oracle/cubiomes/` (vendored C), `build.rs` |
 | `search/` | Parallel (rayon) loop over candidate seeds, generic over match type | `conditions/` |
 | `lib.rs` | Ties `search` + `biome` together per condition (`find_confirmed_double/quad`) | `search/`, `biome/`, `conditions/` |
-| `cli.rs` | Argument parsing — seed count, `--start-seed`, and `--mode` | none |
+| `cli.rs` | Argument parsing — seed count, `--start-seed`, `--threads`, and `--mode` | none |
 
 `cli.rs` and `structures/` have no dependencies on other modules, so they can
 be built independently and in parallel with everything else.
@@ -316,11 +318,8 @@ be built independently and in parallel with everything else.
 
 ## Known Limitations
 
-- **No thread-count flag yet.** Rayon automatically selects the available
-  thread pool. The benchmark output identifies the Pass-1 and end-to-end
-  rates, but the current CLI cannot cap or select the number of worker
-  threads. This will be added separately so benchmark changes remain
-  reproducible.
+- **Thread count is configurable.** Rayon uses the detected logical CPU count
+  by default, and `--threads` can cap it for controlled comparisons.
 - **Quad-hut has no pinned known-seed test.** It's rare enough (both huts of
   a 2x2 block are far less likely to all be swamp than a pair) that
   a search wasn't run to completion during development. If you run one to

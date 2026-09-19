@@ -48,6 +48,10 @@ pub enum Command {
         #[arg(long, default_value_t = 0)]
         start_seed: i64,
 
+        /// Number of Rayon worker threads.
+        #[arg(long, default_value_t = default_threads(), value_parser = parse_threads)]
+        threads: usize,
+
         /// Which hut-cluster condition to search for.
         #[arg(long, value_enum, default_value_t = Mode::Double)]
         mode: Mode,
@@ -64,6 +68,10 @@ pub enum Command {
         /// First seed in the scanned interval.
         #[arg(long, default_value_t = 0)]
         start_seed: i64,
+
+        /// Number of Rayon worker threads.
+        #[arg(long, default_value_t = default_threads(), value_parser = parse_threads)]
+        threads: usize,
 
         /// Which hut-cluster condition to search for.
         #[arg(long, value_enum, default_value_t = Mode::Double)]
@@ -82,10 +90,12 @@ mod tests {
             Command::Search {
                 count,
                 start_seed,
+                threads,
                 mode,
             } => {
                 assert_eq!(count, DEFAULT_COUNT);
                 assert_eq!(start_seed, 0);
+                assert_eq!(threads, default_threads());
                 assert_eq!(mode, Mode::Double);
             }
             _ => panic!("expected Search"),
@@ -99,10 +109,12 @@ mod tests {
             Command::Search {
                 count,
                 start_seed,
+                threads,
                 mode,
             } => {
                 assert_eq!(count, 300_000_000);
                 assert_eq!(start_seed, 0);
+                assert_eq!(threads, default_threads());
                 assert_eq!(mode, Mode::Quad);
             }
             _ => panic!("expected Search"),
@@ -116,13 +128,60 @@ mod tests {
             Command::Bench {
                 count,
                 start_seed,
+                threads,
                 mode,
             } => {
                 assert_eq!(count, 50_000_000);
                 assert_eq!(start_seed, 0);
+                assert_eq!(threads, default_threads());
                 assert_eq!(mode, Mode::Double);
             }
             _ => panic!("expected Bench"),
         }
     }
+
+    #[test]
+    fn parses_start_seed_and_threads() {
+        let cli = Cli::parse_from([
+            "mc-seed-finder",
+            "search",
+            "3500000",
+            "--start-seed",
+            "1000000",
+            "--threads",
+            "16",
+            "--mode",
+            "quad",
+        ]);
+        match cli.command {
+            Command::Search {
+                count,
+                start_seed,
+                threads,
+                mode,
+            } => {
+                assert_eq!(count, 3_500_000);
+                assert_eq!(start_seed, 1_000_000);
+                assert_eq!(threads, 16);
+                assert_eq!(mode, Mode::Quad);
+            }
+            _ => panic!("expected Search"),
+        }
+    }
+}
+
+fn parse_threads(value: &str) -> Result<usize, String> {
+    let threads = value
+        .parse::<usize>()
+        .map_err(|_| "threads must be a positive integer".to_owned())?;
+    if threads == 0 {
+        return Err("threads must be greater than zero".to_owned());
+    }
+    Ok(threads)
+}
+
+fn default_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1)
 }

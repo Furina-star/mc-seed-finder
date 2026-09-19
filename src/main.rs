@@ -9,18 +9,16 @@ use mc_seed_finder::{
 
 fn main() {
     let cli = Cli::parse();
-    println!(
-        "Threads: {} (Rayon auto-threaded)",
-        rayon::current_num_threads()
-    );
-
     match cli.command {
         Command::Bench {
             count,
             start_seed,
+            threads,
             mode,
         } => {
             validate_interval(start_seed, count);
+            configure_threads(threads);
+            println!("Threads: {} (Rayon)", rayon::current_num_threads());
             println!(
                 "Benchmarking Pass-1 (geometry only, no biome filter) over seeds {start_seed}..{} [{mode:?}]...",
                 start_seed + count
@@ -54,9 +52,12 @@ fn main() {
         Command::Search {
             count,
             start_seed,
+            threads,
             mode,
         } => {
             validate_interval(start_seed, count);
+            configure_threads(threads);
+            println!("Threads: {} (Rayon)", rayon::current_num_threads());
             println!(
                 "Pass 1: scanning seeds {start_seed}..{} for geometry-only {mode:?} hut clusters...",
                 start_seed + count
@@ -125,8 +126,19 @@ fn validate_interval(start_seed: i64, count: i64) {
         eprintln!("error: count must be greater than zero");
         std::process::exit(2);
     }
+
     if start_seed.checked_add(count).is_none() {
         eprintln!("error: start-seed + count exceeds the supported i64 range");
         std::process::exit(2);
     }
+}
+
+fn configure_threads(threads: usize) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build_global()
+        .unwrap_or_else(|error| {
+            eprintln!("error: could not configure Rayon with {threads} threads: {error}");
+            std::process::exit(2);
+        });
 }
