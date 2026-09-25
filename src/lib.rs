@@ -9,7 +9,7 @@ pub mod structures;
 
 use biome::BiomeOracle;
 use conditions::{DoubleHutCondition, DoubleHutMatch, QuadHutCondition, QuadHutMatch};
-use search::{scan_geometry, Pass1Result};
+use search::{scan_geometry_from, Pass1Result};
 
 /// Swamp-hut AFK farm condition used by `bench`/`search`: two huts within
 /// 128m of a shared AFK spot, itself within 512m of spawn.
@@ -33,7 +33,16 @@ pub const QUAD_HUT_CONDITION: QuadHutCondition = QuadHutCondition {
 
 /// Double-hut convenience wrapper.
 pub fn find_confirmed_double(count: i64) -> (Pass1Result<DoubleHutMatch>, Vec<DoubleHutMatch>) {
-    let pass1 = scan_geometry(count, |seed| DOUBLE_HUT_CONDITION.evaluate(seed));
+    find_confirmed_double_from(0, count)
+}
+
+pub fn find_confirmed_double_from(
+    start_seed: i64,
+    count: i64,
+) -> (Pass1Result<DoubleHutMatch>, Vec<DoubleHutMatch>) {
+    let pass1 = scan_geometry_from(start_seed, count, |seed| {
+        DOUBLE_HUT_CONDITION.evaluate(seed)
+    });
     if pass1.matches.is_empty() {
         return (pass1, Vec::new());
     }
@@ -49,7 +58,14 @@ pub fn find_confirmed_double(count: i64) -> (Pass1Result<DoubleHutMatch>, Vec<Do
 
 /// Quad-hut convenience wrapper.
 pub fn find_confirmed_quad(count: i64) -> (Pass1Result<QuadHutMatch>, Vec<QuadHutMatch>) {
-    let pass1 = scan_geometry(count, |seed| QUAD_HUT_CONDITION.evaluate(seed));
+    find_confirmed_quad_from(0, count)
+}
+
+pub fn find_confirmed_quad_from(
+    start_seed: i64,
+    count: i64,
+) -> (Pass1Result<QuadHutMatch>, Vec<QuadHutMatch>) {
+    let pass1 = scan_geometry_from(start_seed, count, |seed| QUAD_HUT_CONDITION.evaluate(seed));
     if pass1.matches.is_empty() {
         return (pass1, Vec::new());
     }

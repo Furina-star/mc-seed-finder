@@ -37,10 +37,25 @@ where
     M: Send,
     F: Fn(i64) -> Option<M> + Sync + Send,
 {
+    scan_geometry_from(0, count, evaluate)
+}
+
+/// Pass 1 over the explicit interval `start_seed..start_seed + count`.
+pub fn scan_geometry_from<M, F>(start_seed: i64, count: i64, evaluate: F) -> Pass1Result<M>
+where
+    M: Send,
+    F: Fn(i64) -> Option<M> + Sync + Send,
+{
     debug_assert!(count >= 0, "count should not be negative");
+    let end_seed = start_seed
+        .checked_add(count)
+        .expect("seed interval exceeds the supported i64 range");
 
     let start = Instant::now();
-    let matches: Vec<M> = (0..count).into_par_iter().filter_map(evaluate).collect();
+    let matches: Vec<M> = (start_seed..end_seed)
+        .into_par_iter()
+        .filter_map(evaluate)
+        .collect();
     Pass1Result {
         matches,
         seeds_scanned: count,
